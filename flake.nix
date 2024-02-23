@@ -45,7 +45,7 @@
 
         devShell = with pkgs; mkShell {
           nativeBuildInputs = [ pkg-config ];
-          buildInputs = [ openssl toolchain rustPackages.clippy ];
+          buildInputs = [ openssl toolchain rustPackages.clippy dig ];
           RUST_LOG = "trace";
           shellHook = ''
           alias mygit="! [[ "\$\(pwd\)" == \"/tmp/testing\" ]] && echo \"unsafe! not in /tmp/testing\" || $PWD/your_git.sh"
