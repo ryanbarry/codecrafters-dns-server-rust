@@ -18,17 +18,28 @@ fn main() {
                     0b10000000, // QR, OPCODE, AA, TC, RD
                     0b00000000, // RA, Z, RCODE
                     0u8, 1u8,   // QDCOUNT
-                    0u8, 0u8,   // ANCOUNT
+                    0u8, 1u8,   // ANCOUNT
                     0u8, 0u8,   // NSCOUNT
                     0u8, 0u8,   // ARCOUNT
                 ];
                 let mut response = BytesMut::from(&header[..]);
 
+                // Question
                 response.put(&b"\x0ccodecrafters\x02io"[..]);
                 response.put_u8(0u8); // null byte to end the label sequence that is QNAME
 
                 response.put_u16(1u16); // QTYPE for A record
                 response.put_u16(1u16); // QCLASS for IN
+
+                // Answer
+                response.put(&b"\x0ccodecrafters\x02io"[..]);
+                response.put_u8(0u8);
+
+                response.put_u16(1u16); // TYPE for A record
+                response.put_u16(1u16); // CLASS for IN
+                response.put_u32(60u32); // TTL
+                response.put_u16(4u16); // RDLENGTH
+                response.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
 
                 udp_socket
                     .send_to(&response, source)
