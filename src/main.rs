@@ -13,7 +13,8 @@ fn main() {
                 println!("Received {} bytes from {}", size, source);
                 let response = [
                     34u8, 12u8, // packet id
-                    0b10000000, // QR, OPCODE, AA, TC, RD, RA, Z, RCODE
+                    0b10000000, // QR, OPCODE, AA, TC, RD
+                    0b00000000, // RA, Z, RCODE
                     0u8, 0u8,   // QDCOUNT
                     0u8, 0u8,   // ANCOUNT
                     0u8, 0u8,   // NSCOUNT
