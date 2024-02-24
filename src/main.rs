@@ -2,6 +2,69 @@ use std::net::UdpSocket;
 
 use bytes::{BufMut, BytesMut};
 
+#[derive(Clone, Copy)]
+enum Opcode {
+    QUERY = 0,
+    IQUERY,
+    STATUS,
+    RESERVED,
+}
+
+#[derive(Clone, Copy)]
+enum Rcode {
+    NO_ERROR = 0,
+    FORMAT,
+    SERVER,
+    NAME,
+    NOT_IMPLEMENTED,
+    REFUSED,
+    RESERVED,
+}
+
+struct DnsHeader {
+    id: u16,
+    qr: bool,
+    opcode: Opcode,
+    aa: bool,
+    tc: bool,
+    rd: bool,
+    ra: bool,
+    // skipping z for now
+    rcode: Rcode,
+    qdcount: u16,
+    ancount: u16,
+    nscount: u16,
+    arcount: u16,
+}
+
+impl DnsHeader {
+    fn serialize(&self) -> [u8; 12] {
+        let mut buf = BytesMut::with_capacity(12);
+        buf.put_u16(self.id);
+
+        let mut fields: u16 = (self.qr as u16) << 15;
+
+        fields |= ((self.opcode as u16) & 0x000F) << 11;
+
+        fields |= ((self.aa as u16) & 0x0001) << 10;
+        fields |= ((self.tc as u16) & 0x0001) << 9;
+        fields |= ((self.rd as u16) & 0x0001) << 8;
+        fields |= ((self.ra as u16) & 0x0001) << 7;
+        // skipping Z field
+        fields |= (self.rcode as u16) & 0x000F;
+        buf.put_u16(fields);
+
+        buf.put_u16(self.qdcount);
+        buf.put_u16(self.ancount);
+        buf.put_u16(self.nscount);
+        buf.put_u16(self.arcount);
+
+        let mut res = [0u8; 12];
+        res.clone_from_slice(&buf);
+        res
+    }
+}
+
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
@@ -13,16 +76,21 @@ fn main() {
         match udp_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
                 println!("Received {} bytes from {}", size, source);
-                let header = [
-                    4u8, 210u8, // packet id
-                    0b10000000, // QR, OPCODE, AA, TC, RD
-                    0b00000000, // RA, Z, RCODE
-                    0u8, 1u8,   // QDCOUNT
-                    0u8, 1u8,   // ANCOUNT
-                    0u8, 0u8,   // NSCOUNT
-                    0u8, 0u8,   // ARCOUNT
-                ];
-                let mut response = BytesMut::from(&header[..]);
+                let header = DnsHeader {
+                    id: 1234,
+                    qr: true,
+                    opcode: Opcode::QUERY,
+                    aa: false,
+                    tc: false,
+                    rd: false,
+                    ra: false,
+                    rcode: Rcode::NO_ERROR,
+                    qdcount: 1,
+                    ancount: 1,
+                    nscount: 0,
+                    arcount: 0,
+                };
+                let mut response = BytesMut::from(&header.serialize()[..]);
 
                 // Question
                 response.put(&b"\x0ccodecrafters\x02io"[..]);
