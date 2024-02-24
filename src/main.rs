@@ -9,6 +9,7 @@ enum Opcode {
     Query = 0,
     Iquery,
     Status,
+    #[allow(dead_code)]
     Reserved,
 }
 
@@ -31,6 +32,7 @@ enum Rcode {
     Name,
     NotImplemented,
     Refused,
+    #[allow(dead_code)]
     Reserved,
 }
 
@@ -40,6 +42,9 @@ impl Rcode {
             value(Self::NoError, tag(Self::NoError as u16, 4usize)),
             value(Self::Format, tag(Self::Format as u16, 4usize)),
             value(Self::Server, tag(Self::Server as u16, 4usize)),
+            value(Self::Name, tag(Self::Name as u16, 4usize)),
+            value(Self::NotImplemented, tag(Self::Name as u16, 4usize)),
+            value(Self::Refused, tag(Self::Refused as u16, 4usize)),
         )))(input)
     }
 }
@@ -132,7 +137,7 @@ fn main() {
             Ok((size, source)) => {
                 println!("Received {} bytes from {}", size, source);
 
-                let req_head = DnsHeader::parser(&buf).map(|(i, o)| o).expect("failed reading header of request");
+                let req_head = DnsHeader::parser(&buf).map(|(_, o)| o).expect("failed parsing request header");
 
                 let res_head = DnsHeader {
                     id: req_head.id,
