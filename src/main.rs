@@ -1,24 +1,47 @@
 use std::net::UdpSocket;
 
 use bytes::{BufMut, BytesMut};
+use nom::{sequence::tuple, number::complete::be_u16, bits::{self, complete::tag}, branch::alt, IResult, combinator::{value, map}};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
 enum Opcode {
-    QUERY = 0,
-    IQUERY,
-    STATUS,
-    RESERVED,
+    Query = 0,
+    Iquery,
+    Status,
+    Reserved,
 }
 
-#[derive(Clone, Copy)]
+impl Opcode {
+    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
+        bits::bits::<&[u8], Self, nom::error::Error<(&[u8], usize)>, _,_>(alt((
+            value(Self::Query, tag(Self::Query as u16, 4usize)),
+            value(Self::Iquery, tag(Self::Iquery as u16, 4usize)),
+            value(Self::Status, tag(Self::Status as u16, 4usize)),
+        )))(input)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
 enum Rcode {
-    NO_ERROR = 0,
-    FORMAT,
-    SERVER,
-    NAME,
-    NOT_IMPLEMENTED,
-    REFUSED,
-    RESERVED,
+    NoError = 0,
+    Format,
+    Server,
+    Name,
+    NotImplemented,
+    Refused,
+    Reserved,
+}
+
+impl Rcode {
+    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
+        bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(alt((
+            value(Self::NoError, tag(Self::NoError as u16, 4usize)),
+            value(Self::Format, tag(Self::Format as u16, 4usize)),
+            value(Self::Server, tag(Self::Server as u16, 4usize)),
+        )))(input)
+    }
 }
 
 struct DnsHeader {
@@ -63,6 +86,38 @@ impl DnsHeader {
         res.clone_from_slice(&buf);
         res
     }
+
+    fn parser(buf: &[u8]) -> IResult<&[u8], Self> {
+        map(
+            tuple((be_u16,
+                   bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
+                   Opcode::parser,
+                   bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
+                   bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
+                   bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
+                   bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
+                   bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::take::<&[u8], u8, usize, nom::error::Error<(&[u8], usize)>>(3usize)),
+                   Rcode::parser,
+                   be_u16,
+                   be_u16,
+                   be_u16,
+                   be_u16,
+            )),
+            |(id, qr, opcode, aa, tc, rd, ra, _, rcode, qdcount, ancount, nscount, arcount)| Self {
+                id,
+                qr,
+                opcode,
+                aa,
+                tc,
+                rd,
+                ra,
+                rcode,
+                qdcount,
+                ancount,
+                nscount,
+                arcount,
+            })(buf)
+    }
 }
 
 fn main() {
@@ -76,21 +131,24 @@ fn main() {
         match udp_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
                 println!("Received {} bytes from {}", size, source);
-                let header = DnsHeader {
-                    id: 1234,
+
+                let req_head = DnsHeader::parser(&buf).map(|(i, o)| o).expect("failed reading header of request");
+
+                let res_head = DnsHeader {
+                    id: req_head.id,
                     qr: true,
-                    opcode: Opcode::QUERY,
+                    opcode: req_head.opcode,
                     aa: false,
                     tc: false,
-                    rd: false,
+                    rd: req_head.rd,
                     ra: false,
-                    rcode: Rcode::NO_ERROR,
+                    rcode: if req_head.opcode == Opcode::Query { Rcode::NoError } else { Rcode::NotImplemented },
                     qdcount: 1,
                     ancount: 1,
                     nscount: 0,
                     arcount: 0,
                 };
-                let mut response = BytesMut::from(&header.serialize()[..]);
+                let mut response = BytesMut::from(&res_head.serialize()[..]);
 
                 // Question
                 response.put(&b"\x0ccodecrafters\x02io"[..]);
