@@ -10,7 +10,7 @@ use nom::{
     IResult,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u16)]
 enum Opcode {
     Query = 0,
@@ -23,14 +23,14 @@ enum Opcode {
 impl Opcode {
     fn parser(input: &[u8]) -> IResult<&[u8], Self> {
         bits::bits::<&[u8], Self, nom::error::Error<(&[u8], usize)>, _, _>(alt((
-            value(Self::Query, tag(Self::Query as u16, 4usize)),
-            value(Self::Iquery, tag(Self::Iquery as u16, 4usize)),
-            value(Self::Status, tag(Self::Status as u16, 4usize)),
+            value(Self::Query, tag(Self::Query as u8, 4usize)),
+            value(Self::Iquery, tag(Self::Iquery as u8, 4usize)),
+            value(Self::Status, tag(Self::Status as u8, 4usize)),
         )))(input)
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u16)]
 enum Rcode {
     NoError = 0,
@@ -56,6 +56,7 @@ impl Rcode {
     }
 }
 
+#[derive(Debug)]
 struct DnsHeader {
     id: u16,
     qr: bool,
@@ -77,10 +78,8 @@ impl DnsHeader {
         let mut buf = BytesMut::with_capacity(12);
         buf.put_u16(self.id);
 
-        let mut fields: u16 = (self.qr as u16) << 15;
-
+        let mut fields: u16 = ((self.qr as u16) & 0x0001) << 15;
         fields |= ((self.opcode as u16) & 0x000F) << 11;
-
         fields |= ((self.aa as u16) & 0x0001) << 10;
         fields |= ((self.tc as u16) & 0x0001) << 9;
         fields |= ((self.rd as u16) & 0x0001) << 8;
@@ -148,11 +147,13 @@ fn main() {
     loop {
         match udp_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
-                println!("Received {} bytes from {}", size, source);
+                println!("Received {} bytes from {}\n{:?}", size, source, &buf[..size-1]);
 
                 let req_head = DnsHeader::parser(&buf)
                     .map(|(_, o)| o)
                     .expect("failed parsing request header");
+
+                println!("req_head: {:?}", req_head);
 
                 let res_head = DnsHeader {
                     id: req_head.id,
@@ -172,6 +173,7 @@ fn main() {
                     nscount: 0,
                     arcount: 0,
                 };
+                println!("res_head: {:?}", res_head);
                 let mut response = BytesMut::from(&res_head.serialize()[..]);
 
                 // Question
