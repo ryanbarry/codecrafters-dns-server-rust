@@ -16,22 +16,46 @@ enum Opcode {
     Query = 0,
     Iquery,
     Status,
-    #[allow(dead_code)]
-    Reserved,
+    Reserved3,
+    Reserved4,
+    Reserved5,
+    Reserved6,
+    Reserved7,
+    Reserved8,
+    Reserved9,
+    Reserved10,
+    Reserved11,
+    Reserved12,
+    Reserved13,
+    Reserved14,
+    Reserved15,
 }
 
 impl Opcode {
     fn parser(input: (&[u8], usize)) -> IResult<(&[u8], usize), Self> {
         alt((
-            value(Self::Query, bits::complete::tag(Self::Query as u16, 4usize)),
+            value(Self::Query, bits::complete::tag(Self::Query as u8, 4usize)),
             value(
                 Self::Iquery,
-                bits::complete::tag(Self::Iquery as u16, 4usize),
+                bits::complete::tag(Self::Iquery as u8, 4usize),
             ),
             value(
                 Self::Status,
-                bits::complete::tag(Self::Status as u16, 4usize),
+                bits::complete::tag(Self::Status as u8, 4usize),
             ),
+            value(Self::Reserved3, bits::complete::tag(Self::Reserved3 as u8, 4usize)),
+            value(Self::Reserved4, bits::complete::tag(Self::Reserved4 as u8, 4usize)),
+            value(Self::Reserved5, bits::complete::tag(Self::Reserved5 as u8, 4usize)),
+            value(Self::Reserved6, bits::complete::tag(Self::Reserved6 as u8, 4usize)),
+            value(Self::Reserved7, bits::complete::tag(Self::Reserved7 as u8, 4usize)),
+            value(Self::Reserved8, bits::complete::tag(Self::Reserved8 as u8, 4usize)),
+            value(Self::Reserved9, bits::complete::tag(Self::Reserved9 as u8, 4usize)),
+            value(Self::Reserved10, bits::complete::tag(Self::Reserved10 as u8, 4usize)),
+            value(Self::Reserved11, bits::complete::tag(Self::Reserved11 as u8, 4usize)),
+            value(Self::Reserved12, bits::complete::tag(Self::Reserved12 as u8, 4usize)),
+            value(Self::Reserved13, bits::complete::tag(Self::Reserved13 as u8, 4usize)),
+            value(Self::Reserved14, bits::complete::tag(Self::Reserved14 as u8, 4usize)),
+            value(Self::Reserved15, bits::complete::tag(Self::Reserved15 as u8, 4usize)),
         ))(input)
     }
 }
@@ -45,8 +69,16 @@ enum Rcode {
     Name,
     NotImplemented,
     Refused,
-    #[allow(dead_code)]
-    Reserved,
+    Reserved6,
+    Reserved7,
+    Reserved8,
+    Reserved9,
+    Reserved10,
+    Reserved11,
+    Reserved12,
+    Reserved13,
+    Reserved14,
+    Reserved15,
 }
 
 impl Rcode {
@@ -73,7 +105,17 @@ impl Rcode {
                 Self::Refused,
                 bits::complete::tag(Self::Refused as u16, 4usize),
             ),
-        ))(input)
+            value(Self::Reserved6, bits::complete::tag(Self::Reserved6 as u8, 4usize)),
+            value(Self::Reserved7, bits::complete::tag(Self::Reserved7 as u8, 4usize)),
+            value(Self::Reserved8, bits::complete::tag(Self::Reserved8 as u8, 4usize)),
+            value(Self::Reserved9, bits::complete::tag(Self::Reserved9 as u8, 4usize)),
+            value(Self::Reserved10, bits::complete::tag(Self::Reserved10 as u8, 4usize)),
+            value(Self::Reserved11, bits::complete::tag(Self::Reserved11 as u8, 4usize)),
+            value(Self::Reserved12, bits::complete::tag(Self::Reserved12 as u8, 4usize)),
+            value(Self::Reserved13, bits::complete::tag(Self::Reserved13 as u8, 4usize)),
+            value(Self::Reserved14, bits::complete::tag(Self::Reserved14 as u8, 4usize)),
+            value(Self::Reserved15, bits::complete::tag(Self::Reserved15 as u8, 4usize)),
+    ))(input)
     }
 }
 
