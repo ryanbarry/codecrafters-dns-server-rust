@@ -2,7 +2,7 @@ use std::net::UdpSocket;
 
 use bytes::{BufMut, BytesMut};
 use nom::{
-    bits::{self, complete::tag},
+    bits,
     branch::alt,
     combinator::{map, value},
     number::complete::be_u16,
@@ -21,12 +21,18 @@ enum Opcode {
 }
 
 impl Opcode {
-    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
-        bits::bits::<&[u8], Self, nom::error::Error<(&[u8], usize)>, _, _>(alt((
-            value(Self::Query, tag(Self::Query as u8, 4usize)),
-            value(Self::Iquery, tag(Self::Iquery as u8, 4usize)),
-            value(Self::Status, tag(Self::Status as u8, 4usize)),
-        )))(input)
+    fn parser(input: (&[u8], usize)) -> IResult<(&[u8], usize), Self> {
+        alt((
+            value(Self::Query, bits::complete::tag(Self::Query as u8, 4usize)),
+            value(
+                Self::Iquery,
+                bits::complete::tag(Self::Iquery as u8, 4usize),
+            ),
+            value(
+                Self::Status,
+                bits::complete::tag(Self::Status as u8, 4usize),
+            ),
+        ))(input)
     }
 }
 
@@ -44,15 +50,30 @@ enum Rcode {
 }
 
 impl Rcode {
-    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
-        bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(alt((
-            value(Self::NoError, tag(Self::NoError as u16, 4usize)),
-            value(Self::Format, tag(Self::Format as u16, 4usize)),
-            value(Self::Server, tag(Self::Server as u16, 4usize)),
-            value(Self::Name, tag(Self::Name as u16, 4usize)),
-            value(Self::NotImplemented, tag(Self::Name as u16, 4usize)),
-            value(Self::Refused, tag(Self::Refused as u16, 4usize)),
-        )))(input)
+    fn parser(input: (&[u8], usize)) -> IResult<(&[u8], usize), Self> {
+        alt((
+            value(
+                Self::NoError,
+                bits::complete::tag(Self::NoError as u16, 4usize),
+            ),
+            value(
+                Self::Format,
+                bits::complete::tag(Self::Format as u16, 4usize),
+            ),
+            value(
+                Self::Server,
+                bits::complete::tag(Self::Server as u16, 4usize),
+            ),
+            value(Self::Name, bits::complete::tag(Self::Name as u16, 4usize)),
+            value(
+                Self::NotImplemented,
+                bits::complete::tag(Self::Name as u16, 4usize),
+            ),
+            value(
+                Self::Refused,
+                bits::complete::tag(Self::Refused as u16, 4usize),
+            ),
+        ))(input)
     }
 }
 
@@ -102,36 +123,38 @@ impl DnsHeader {
         map(
             tuple((
                 be_u16,
-                bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
-                Opcode::parser,
-                bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
-                bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
-                bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
-                bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(bits::complete::bool),
-                bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(
+                bits::bits::<_, _, nom::error::Error<(&[u8], usize)>, _, _>(tuple((
+                    bits::complete::bool,
+                    Opcode::parser,
+                    bits::complete::bool,
+                    bits::complete::bool,
+                    bits::complete::bool,
+                    bits::complete::bool,
                     bits::complete::take::<&[u8], u8, usize, nom::error::Error<(&[u8], usize)>>(
                         3usize,
                     ),
-                ),
-                Rcode::parser,
+                    Rcode::parser,
+                ))),
                 be_u16,
                 be_u16,
                 be_u16,
                 be_u16,
             )),
-            |(id, qr, opcode, aa, tc, rd, ra, _, rcode, qdcount, ancount, nscount, arcount)| Self {
-                id,
-                qr,
-                opcode,
-                aa,
-                tc,
-                rd,
-                ra,
-                rcode,
-                qdcount,
-                ancount,
-                nscount,
-                arcount,
+            |(id, (qr, opcode, aa, tc, rd, ra, _, rcode), qdcount, ancount, nscount, arcount)| {
+                Self {
+                    id,
+                    qr,
+                    opcode,
+                    aa,
+                    tc,
+                    rd,
+                    ra,
+                    rcode,
+                    qdcount,
+                    ancount,
+                    nscount,
+                    arcount,
+                }
             },
         )(buf)
     }
@@ -147,7 +170,12 @@ fn main() {
     loop {
         match udp_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
-                println!("Received {} bytes from {}\n{:?}", size, source, &buf[..size-1]);
+                println!(
+                    "Received {} bytes from {}\n{:?}",
+                    size,
+                    source,
+                    &buf[..size]
+                );
 
                 let req_head = DnsHeader::parser(&buf)
                     .map(|(_, o)| o)
