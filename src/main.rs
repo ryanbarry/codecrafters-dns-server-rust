@@ -7,7 +7,7 @@ use nom::{
     combinator::{map, value},
     number::complete::be_u16,
     sequence::tuple,
-    IResult,
+    IResult, Finish,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -23,14 +23,14 @@ enum Opcode {
 impl Opcode {
     fn parser(input: (&[u8], usize)) -> IResult<(&[u8], usize), Self> {
         alt((
-            value(Self::Query, bits::complete::tag(Self::Query as u8, 4usize)),
+            value(Self::Query, bits::complete::tag(Self::Query as u16, 4usize)),
             value(
                 Self::Iquery,
-                bits::complete::tag(Self::Iquery as u8, 4usize),
+                bits::complete::tag(Self::Iquery as u16, 4usize),
             ),
             value(
                 Self::Status,
-                bits::complete::tag(Self::Status as u8, 4usize),
+                bits::complete::tag(Self::Status as u16, 4usize),
             ),
         ))(input)
     }
@@ -178,6 +178,7 @@ fn main() {
                 );
 
                 let req_head = DnsHeader::parser(&buf)
+                    .finish()
                     .map(|(_, o)| o)
                     .expect("failed parsing request header");
 
@@ -221,9 +222,10 @@ fn main() {
                 response.put_u16(4u16); // RDLENGTH
                 response.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
 
-                udp_socket
+                let sentsz = udp_socket
                     .send_to(&response, source)
                     .expect("Failed to send response");
+                println!("sent {} bytes back", sentsz);
             }
             Err(e) => {
                 eprintln!("Error receiving data: {}", e);
