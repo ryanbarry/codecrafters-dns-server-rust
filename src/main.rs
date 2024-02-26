@@ -4,10 +4,10 @@ use bytes::{BufMut, BytesMut};
 use nom::{
     bits,
     branch::alt,
-    combinator::{map, value},
-    number::complete::be_u16,
+    combinator::{map, map_res, value, verify, into},
+    number::complete::{be_u16, u8},
     sequence::tuple,
-    IResult, Finish,
+    IResult, Finish, AsBytes, multi::{length_data, many_till}, complete::tag,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -115,7 +115,7 @@ impl Rcode {
             value(Self::Reserved13, bits::complete::tag(Self::Reserved13 as u8, 4usize)),
             value(Self::Reserved14, bits::complete::tag(Self::Reserved14 as u8, 4usize)),
             value(Self::Reserved15, bits::complete::tag(Self::Reserved15 as u8, 4usize)),
-    ))(input)
+        ))(input)
     }
 }
 
@@ -202,6 +202,185 @@ impl DnsHeader {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+#[repr(u16)]
+enum Type {
+    A = 1,
+    NS,
+    MD,
+    MF,
+    CNAME,
+    SOA,
+    MB,
+    MG,
+    MR,
+    NULL,
+    WKS,
+    PTR,
+    HINFO,
+    MINFO,
+    MX,
+    TXT,
+}
+
+impl Type {
+    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
+        map_res(be_u16, |d: u16| match d {
+            1 => Ok(Self::A),
+            2 => Ok(Self::NS),
+            3 => Ok(Self::MD),
+            0u16 | 4u16..=u16::MAX => Err("unexpected TYPE value")
+        })(input)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u16)]
+enum Qtype {
+    A = 1,
+    NS,
+    MD,
+    MF,
+    CNAME,
+    SOA,
+    MB,
+    MG,
+    MR,
+    NULL,
+    WKS,
+    PTR,
+    HINFO,
+    MINFO,
+    MX,
+    TXT,
+    AXFR = 252,
+    MAILB,
+    MAILA,
+    ASTERISK,
+}
+
+impl Qtype {
+    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
+        map_res(be_u16, |d: u16| match d {
+            1 => Ok(Self::A),
+            2 => Ok(Self::NS),
+            3 => Ok(Self::MD),
+            0u16 | 4u16..=u16::MAX => Err("unexpected QTYPE value")
+        })(input)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Class {
+    IN = 1,
+    CS,
+    CH,
+    HS,
+}
+
+impl Class {
+    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
+        map_res(be_u16, |d: u16| match d {
+            1 => Ok(Self::IN),
+            2 => Ok(Self::CS),
+            3 => Ok(Self::CH),
+            4 => Ok(Self::HS),
+            0u16 | 5u16..=u16::MAX => Err("unexpected CLASS value")
+        })(input)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum Qclass {
+    IN = 1,
+    CS,
+    CH,
+    HS,
+    ASTERISK = 255,
+}
+
+impl Qclass {
+    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
+        map_res(be_u16, |d: u16| match d {
+            1 => Ok(Self::IN),
+            2 => Ok(Self::CS),
+            3 => Ok(Self::CH),
+            4 => Ok(Self::HS),
+            255 => Ok(Self::ASTERISK),
+            0u16 | 5u16..=254u16 | 256u16..=u16::MAX => Err("unexpected QCLASS value"),
+        })(input)
+    }
+}
+
+#[derive(Debug)]
+struct DnsQuestion {
+    qname: Vec<Vec<u8>>,
+    qtype: Qtype,
+    qclass: Qclass,
+}
+
+fn label_parser(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    into(length_data(u8::<&[u8], nom::error::Error<&[u8]>>))(input)
+}
+
+impl DnsQuestion {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = BytesMut::with_capacity(512);
+        for label in self.qname.iter() {
+            assert!(label.len() < 64, "label.len() is longer ({}) than allowed (63)", label.len());
+            buf.put_u8(label.len().try_into().expect("label.len() can't fit in u8"));
+            buf.put_slice(label.as_slice());
+        }
+        buf.put_u8(0u8); // terminate NAME section with a label of length 0 (the "null label of the root")
+
+        buf.put_u16(self.qtype as u16);
+        buf.put_u16(self.qclass as u16);
+
+        buf.to_vec()
+    }
+
+    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
+        tuple((
+            many_till(label_parser, verify(label_parser, |v: &Vec<u8>| v.len() == 0)),
+            Qtype::parser,
+            Qclass::parser,
+            ))(input).map(|(i, ((qname, _), qtype, qclass))| (i, DnsQuestion {
+            qname,
+            qtype,
+            qclass
+        }))
+    }
+}
+
+struct DnsResourceRecord {
+    name: Vec<Vec<u8>>,
+    rrtype: Type,
+    class: Class,
+    ttl: u32,
+    rdata: Vec<u8>,
+}
+
+impl DnsResourceRecord {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = BytesMut::with_capacity(512);
+        for label in self.name.iter() {
+            assert!(label.len() < 64, "label.len() is longer ({}) than allowed (63)", label.len());
+            buf.put_u8(label.len().try_into().expect("label.len() can't fit in u8"));
+            buf.put_slice(label.as_slice());
+        }
+        buf.put_u8(0u8); // terminate NAME section with a label of length 0 (the "null label of the root")
+
+        buf.put_u16(self.rrtype as u16);
+        buf.put_u16(self.class as u16);
+        buf.put_u32(self.ttl);
+
+        buf.put_u16(self.rdata.len().try_into().expect("rdata.len() can't fit in u16"));
+        buf.put_slice(self.rdata.as_slice());
+
+        buf.to_vec()
+    }
+}
+
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
@@ -219,12 +398,17 @@ fn main() {
                     &buf[..size]
                 );
 
-                let req_head = DnsHeader::parser(&buf)
+                let (rest, req_head) = DnsHeader::parser(&buf)
                     .finish()
-                    .map(|(_, o)| o)
                     .expect("failed parsing request header");
-
                 println!("req_head: {:?}", req_head);
+
+                let (_rest, req_ques) = DnsQuestion::parser(rest)
+                    .finish()
+                    .expect("failed parsing request question");
+                println!("req_ques: {:?}", req_ques);
+
+                let mut response = BytesMut::with_capacity(64);
 
                 let res_head = DnsHeader {
                     id: req_head.id,
@@ -245,14 +429,15 @@ fn main() {
                     arcount: 0,
                 };
                 println!("res_head: {:?}", res_head);
-                let mut response = BytesMut::from(&res_head.serialize()[..]);
+                response.put_slice(&res_head.serialize());
 
-                // Question
-                response.put(&b"\x0ccodecrafters\x02io"[..]);
-                response.put_u8(0u8); // null byte to end the label sequence that is QNAME
-
-                response.put_u16(1u16); // QTYPE for A record
-                response.put_u16(1u16); // QCLASS for IN
+                let res_ques = DnsQuestion {
+                    qname: vec![Vec::from(b"codecrafters"), Vec::from(b"io")],
+                    qtype: Qtype::A,
+                    qclass: Qclass::IN,
+                };
+                println!("res_ques: {:?}", res_ques);
+                response.put_slice(&res_ques.serialize());
 
                 // Answer
                 response.put(&b"\x0ccodecrafters\x02io"[..]);
