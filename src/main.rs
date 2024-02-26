@@ -319,6 +319,10 @@ struct DnsQuestion {
     qclass: Qclass,
 }
 
+fn labels_parser(input: &[u8]) -> IResult<&[u8], Vec<Vec<u8>>> {
+    many_till(label_parser, verify(label_parser, |v: &Vec<u8>| v.len() == 0))(input).map(|(i, (o, _))| (i, o))
+}
+
 fn label_parser(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
     into(length_data(u8::<&[u8], nom::error::Error<&[u8]>>))(input)
 }
@@ -347,10 +351,10 @@ impl DnsQuestion {
 
     fn parser(input: &[u8]) -> IResult<&[u8], Self> {
         tuple((
-            many_till(label_parser, verify(label_parser, |v: &Vec<u8>| v.len() == 0)),
+            labels_parser,
             Qtype::parser,
             Qclass::parser,
-            ))(input).map(|(i, ((qname, _), qtype, qclass))| (i, DnsQuestion {
+            ))(input).map(|(i, (qname, qtype, qclass))| (i, DnsQuestion {
             qname,
             qtype,
             qclass
@@ -403,18 +407,12 @@ fn main() {
                     source,
                     &buf[..size]
                 );
+                let mut response = BytesMut::with_capacity(64);
 
                 let (rest, req_head) = DnsHeader::parser(&buf)
                     .finish()
                     .expect("failed parsing request header");
                 println!("req_head: {:?}", req_head);
-
-                let (_rest, req_ques) = DnsQuestion::parser(rest)
-                    .finish()
-                    .expect("failed parsing request question");
-                println!("req_ques: {:?}", req_ques);
-
-                let mut response = BytesMut::with_capacity(64);
 
                 let res_head = DnsHeader {
                     id: req_head.id,
@@ -429,30 +427,37 @@ fn main() {
                     } else {
                         Rcode::NotImplemented
                     },
-                    qdcount: 1,
-                    ancount: 1,
+                    qdcount: req_head.qdcount,
+                    ancount: req_head.qdcount,
                     nscount: 0,
                     arcount: 0,
                 };
                 println!("res_head: {:?}", res_head);
                 response.put_slice(&res_head.serialize());
 
-                let res_ques = DnsQuestion {
-                    qname: req_ques.qname,
-                    qtype: Qtype::A,
-                    qclass: Qclass::IN,
-                };
-                println!("res_ques: {:?}", res_ques);
-                response.put_slice(&res_ques.serialize());
+                for _ in 0..=req_head.qdcount {
+                    let (_rest, req_ques) = DnsQuestion::parser(rest)
+                        .finish()
+                        .expect("failed parsing request question");
+                    println!("req_ques: {:?}", req_ques);
 
-                // Answer
-                response.put_slice(&serialize_labels(&res_ques.qname));
+                    let res_ques = DnsQuestion {
+                        qname: req_ques.qname,
+                        qtype: Qtype::A,
+                        qclass: Qclass::IN,
+                    };
+                    println!("res_ques: {:?}", res_ques);
+                    response.put_slice(&res_ques.serialize());
 
-                response.put_u16(1u16); // TYPE for A record
-                response.put_u16(1u16); // CLASS for IN
-                response.put_u32(60u32); // TTL
-                response.put_u16(4u16); // RDLENGTH
-                response.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
+                    // Answer
+                    response.put_slice(&serialize_labels(&res_ques.qname));
+
+                    response.put_u16(1u16); // TYPE for A record
+                    response.put_u16(1u16); // CLASS for IN
+                    response.put_u32(60u32); // TTL
+                    response.put_u16(4u16); // RDLENGTH
+                    response.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
+                }
 
                 let sentsz = udp_socket
                     .send_to(&response, source)
