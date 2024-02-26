@@ -323,15 +323,21 @@ fn label_parser(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
     into(length_data(u8::<&[u8], nom::error::Error<&[u8]>>))(input)
 }
 
+fn serialize_labels(labels: &Vec<Vec<u8>>) -> Vec<u8> {
+    let mut buf = BytesMut::with_capacity(64);
+    for label in labels.iter() {
+        assert!(label.len() < 64, "label.len() is longer ({}) than allowed (63)", label.len());
+        buf.put_u8(label.len().try_into().expect("label.len() can't fit in u8"));
+        buf.put_slice(label.as_slice());
+    }
+    buf.put_u8(0u8); // terminate NAME section with a label of length 0 (the "null label of the root")
+    buf.into()
+}
+
 impl DnsQuestion {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = BytesMut::with_capacity(512);
-        for label in self.qname.iter() {
-            assert!(label.len() < 64, "label.len() is longer ({}) than allowed (63)", label.len());
-            buf.put_u8(label.len().try_into().expect("label.len() can't fit in u8"));
-            buf.put_slice(label.as_slice());
-        }
-        buf.put_u8(0u8); // terminate NAME section with a label of length 0 (the "null label of the root")
+        buf.put_slice(&serialize_labels(&self.qname));
 
         buf.put_u16(self.qtype as u16);
         buf.put_u16(self.qclass as u16);
@@ -432,7 +438,7 @@ fn main() {
                 response.put_slice(&res_head.serialize());
 
                 let res_ques = DnsQuestion {
-                    qname: vec![Vec::from(b"codecrafters"), Vec::from(b"io")],
+                    qname: req_ques.qname,
                     qtype: Qtype::A,
                     qclass: Qclass::IN,
                 };
@@ -440,8 +446,7 @@ fn main() {
                 response.put_slice(&res_ques.serialize());
 
                 // Answer
-                response.put(&b"\x0ccodecrafters\x02io"[..]);
-                response.put_u8(0u8);
+                response.put_slice(&serialize_labels(&res_ques.qname));
 
                 response.put_u16(1u16); // TYPE for A record
                 response.put_u16(1u16); // CLASS for IN
