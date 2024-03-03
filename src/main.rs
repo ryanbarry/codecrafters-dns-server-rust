@@ -319,12 +319,88 @@ struct DnsQuestion {
     qclass: Qclass,
 }
 
-fn labels_parser(input: &[u8]) -> IResult<&[u8], Vec<Vec<u8>>> {
-    many_till(label_parser, verify(label_parser, |v: &Vec<u8>| v.len() == 0))(input).map(|(i, (o, _))| (i, o))
+struct DnsAnswer{}
+
+struct DnsAuthority{}
+
+struct DnsAdditional{}
+
+struct ParsedLabel {
+    pos: usize,
+    label: Vec<Vec<u8>>,
 }
 
-fn label_parser(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
-    into(length_data(u8::<&[u8], nom::error::Error<&[u8]>>))(input)
+struct DnsMessageParser {
+    label_buf: Vec<ParsedLabel>,
+    ques: Option<DnsQuestion>,
+    ans: Option<Vec<u8>>,
+    auth: Option<DnsAuthority>,
+    addl: Option<DnsAdditional>,
+}
+
+impl DnsMessageParser {
+    fn new() -> Self {
+        DnsMessageParser {
+            label_buf: vec![],
+            ques: None,
+            ans: None,
+            auth: None,
+            addl: None,
+        }
+    }
+
+    fn parse(&mut self, header: &DnsHeader, head_sz: usize, input: &[u8]) {
+        let mut buf = input;
+        println!("responding to {} questions", header.qdcount);
+        for _ in 0..header.qdcount {
+            let (rest, req_ques) = Self::question_parser(buf).finish().expect("parsing question failed");
+            buf = rest;
+
+            let res_ques = DnsQuestion {
+                qname: req_ques.qname,
+                qtype: Qtype::A,
+                qclass: Qclass::IN,
+            };
+            println!("res_ques: {:?}", res_ques);
+
+            // Answer
+            let mut ans = vec![];
+            ans.put_slice(&serialize_labels(&res_ques.qname));
+
+            ans.put_u16(1u16); // TYPE for A record
+            ans.put_u16(1u16); // CLASS for IN
+            ans.put_u32(59u32); // TTL
+            ans.put_u16(4u16); // RDLENGTH
+            ans.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
+
+            self.ques = Some(res_ques);
+            self.ans = Some(ans);
+        }
+    }
+
+    fn question_parser(input: &[u8]) -> IResult<&[u8], DnsQuestion> {
+        tuple((
+            Self::labels_parser,
+            Qtype::parser,
+            Qclass::parser,
+            ))(input).map(|(i, (qname, qtype, qclass))| (i, DnsQuestion {
+            qname,
+            qtype,
+            qclass
+        }))
+    }
+
+    fn find_label(&self, pos: usize) -> Vec<Vec<u8>> {
+        self.label_buf.iter().find(|pl| pl.pos == pos).expect("there was no parsed with label pos that").label.clone()
+    }
+
+    fn labels_parser(input: &[u8]) -> IResult<&[u8], Vec<Vec<u8>>> {
+        many_till(Self::label_parser, verify(Self::label_parser, |v: &Vec<u8>| v.len() == 0))(input).map(|(i, (o, _))| (i, o))
+    }
+
+    fn label_parser(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
+        into(length_data(u8::<&[u8], nom::error::Error<&[u8]>>))(input)
+    }
 }
 
 fn serialize_labels(labels: &Vec<Vec<u8>>) -> Vec<u8> {
@@ -345,47 +421,6 @@ impl DnsQuestion {
 
         buf.put_u16(self.qtype as u16);
         buf.put_u16(self.qclass as u16);
-
-        buf.to_vec()
-    }
-
-    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
-        tuple((
-            labels_parser,
-            Qtype::parser,
-            Qclass::parser,
-            ))(input).map(|(i, (qname, qtype, qclass))| (i, DnsQuestion {
-            qname,
-            qtype,
-            qclass
-        }))
-    }
-}
-
-struct DnsResourceRecord {
-    name: Vec<Vec<u8>>,
-    rrtype: Type,
-    class: Class,
-    ttl: u32,
-    rdata: Vec<u8>,
-}
-
-impl DnsResourceRecord {
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = BytesMut::with_capacity(512);
-        for label in self.name.iter() {
-            assert!(label.len() < 64, "label.len() is longer ({}) than allowed (63)", label.len());
-            buf.put_u8(label.len().try_into().expect("label.len() can't fit in u8"));
-            buf.put_slice(label.as_slice());
-        }
-        buf.put_u8(0u8); // terminate NAME section with a label of length 0 (the "null label of the root")
-
-        buf.put_u16(self.rrtype as u16);
-        buf.put_u16(self.class as u16);
-        buf.put_u32(self.ttl);
-
-        buf.put_u16(self.rdata.len().try_into().expect("rdata.len() can't fit in u16"));
-        buf.put_slice(self.rdata.as_slice());
 
         buf.to_vec()
     }
@@ -435,30 +470,11 @@ fn main() {
                 println!("res_head: {:?}", res_head);
                 response.put_slice(&res_head.serialize());
 
-                for _ in 0..req_head.qdcount {
-                    let (_rest, req_ques) = DnsQuestion::parser(rest)
-                        .finish()
-                        .expect("failed parsing request question");
-                    println!("req_ques: {:?}", req_ques);
-
-                    let res_ques = DnsQuestion {
-                        qname: req_ques.qname,
-                        qtype: Qtype::A,
-                        qclass: Qclass::IN,
-                    };
-                    println!("res_ques: {:?}", res_ques);
-                    response.put_slice(&res_ques.serialize());
-
-                    // Answer
-                    response.put_slice(&serialize_labels(&res_ques.qname));
-
-                    response.put_u16(1u16); // TYPE for A record
-                    response.put_u16(1u16); // CLASS for IN
-                    response.put_u32(60u32); // TTL
-                    response.put_u16(4u16); // RDLENGTH
-                    response.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
-                }
-
+                let ques_beg = size-rest.len();
+                let mut parser = DnsMessageParser::new();
+                parser.parse(&req_head, ques_beg, rest);
+                response.put_slice(&parser.ques.unwrap().serialize());
+                response.put_slice(&parser.ans.unwrap());
                 let sentsz = udp_socket
                     .send_to(&response, source)
                     .expect("Failed to send response");
