@@ -435,7 +435,7 @@ fn main() {
                 println!("res_head: {:?}", res_head);
                 response.put_slice(&res_head.serialize());
 
-                for _ in 0..=req_head.qdcount {
+                for _ in 0..req_head.qdcount {
                     let (_rest, req_ques) = DnsQuestion::parser(rest)
                         .finish()
                         .expect("failed parsing request question");
