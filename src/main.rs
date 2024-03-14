@@ -4,10 +4,12 @@ use bytes::{BufMut, BytesMut};
 use nom::{
     bits,
     branch::alt,
+    bytes::complete::take,
     combinator::{map, map_res, value, verify},
+    multi::many_till,
     number::complete::{be_u16, u8},
     sequence::tuple,
-    IResult, Finish, multi::many_till, bytes::complete::take,
+    Finish, IResult,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -43,19 +45,58 @@ impl Opcode {
                 Self::Status,
                 bits::complete::tag(Self::Status as u8, 4usize),
             ),
-            value(Self::Reserved03, bits::complete::tag(Self::Reserved03 as u8, 4usize)),
-            value(Self::Reserved04, bits::complete::tag(Self::Reserved04 as u8, 4usize)),
-            value(Self::Reserved05, bits::complete::tag(Self::Reserved05 as u8, 4usize)),
-            value(Self::Reserved06, bits::complete::tag(Self::Reserved06 as u8, 4usize)),
-            value(Self::Reserved07, bits::complete::tag(Self::Reserved07 as u8, 4usize)),
-            value(Self::Reserved08, bits::complete::tag(Self::Reserved08 as u8, 4usize)),
-            value(Self::Reserved09, bits::complete::tag(Self::Reserved09 as u8, 4usize)),
-            value(Self::Reserved10, bits::complete::tag(Self::Reserved10 as u8, 4usize)),
-            value(Self::Reserved11, bits::complete::tag(Self::Reserved11 as u8, 4usize)),
-            value(Self::Reserved12, bits::complete::tag(Self::Reserved12 as u8, 4usize)),
-            value(Self::Reserved13, bits::complete::tag(Self::Reserved13 as u8, 4usize)),
-            value(Self::Reserved14, bits::complete::tag(Self::Reserved14 as u8, 4usize)),
-            value(Self::Reserved15, bits::complete::tag(Self::Reserved15 as u8, 4usize)),
+            value(
+                Self::Reserved03,
+                bits::complete::tag(Self::Reserved03 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved04,
+                bits::complete::tag(Self::Reserved04 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved05,
+                bits::complete::tag(Self::Reserved05 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved06,
+                bits::complete::tag(Self::Reserved06 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved07,
+                bits::complete::tag(Self::Reserved07 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved08,
+                bits::complete::tag(Self::Reserved08 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved09,
+                bits::complete::tag(Self::Reserved09 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved10,
+                bits::complete::tag(Self::Reserved10 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved11,
+                bits::complete::tag(Self::Reserved11 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved12,
+                bits::complete::tag(Self::Reserved12 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved13,
+                bits::complete::tag(Self::Reserved13 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved14,
+                bits::complete::tag(Self::Reserved14 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved15,
+                bits::complete::tag(Self::Reserved15 as u8, 4usize),
+            ),
         ))(input)
     }
 }
@@ -105,16 +146,46 @@ impl Rcode {
                 Self::Refused,
                 bits::complete::tag(Self::Refused as u8, 4usize),
             ),
-            value(Self::Reserved6, bits::complete::tag(Self::Reserved6 as u8, 4usize)),
-            value(Self::Reserved7, bits::complete::tag(Self::Reserved7 as u8, 4usize)),
-            value(Self::Reserved8, bits::complete::tag(Self::Reserved8 as u8, 4usize)),
-            value(Self::Reserved9, bits::complete::tag(Self::Reserved9 as u8, 4usize)),
-            value(Self::Reserved10, bits::complete::tag(Self::Reserved10 as u8, 4usize)),
-            value(Self::Reserved11, bits::complete::tag(Self::Reserved11 as u8, 4usize)),
-            value(Self::Reserved12, bits::complete::tag(Self::Reserved12 as u8, 4usize)),
-            value(Self::Reserved13, bits::complete::tag(Self::Reserved13 as u8, 4usize)),
-            value(Self::Reserved14, bits::complete::tag(Self::Reserved14 as u8, 4usize)),
-            value(Self::Reserved15, bits::complete::tag(Self::Reserved15 as u8, 4usize)),
+            value(
+                Self::Reserved6,
+                bits::complete::tag(Self::Reserved6 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved7,
+                bits::complete::tag(Self::Reserved7 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved8,
+                bits::complete::tag(Self::Reserved8 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved9,
+                bits::complete::tag(Self::Reserved9 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved10,
+                bits::complete::tag(Self::Reserved10 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved11,
+                bits::complete::tag(Self::Reserved11 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved12,
+                bits::complete::tag(Self::Reserved12 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved13,
+                bits::complete::tag(Self::Reserved13 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved14,
+                bits::complete::tag(Self::Reserved14 as u8, 4usize),
+            ),
+            value(
+                Self::Reserved15,
+                bits::complete::tag(Self::Reserved15 as u8, 4usize),
+            ),
         ))(input)
     }
 }
@@ -231,7 +302,7 @@ impl Type {
             1 => Ok(Self::A),
             2 => Ok(Self::NS),
             3 => Ok(Self::MD),
-            0u16 | 4u16..=u16::MAX => Err("unexpected TYPE value")
+            0u16 | 4u16..=u16::MAX => Err("unexpected TYPE value"),
         })(input)
     }
 }
@@ -268,7 +339,7 @@ impl Qtype {
             1 => Ok(Self::A),
             2 => Ok(Self::NS),
             3 => Ok(Self::MD),
-            0u16 | 4u16..=u16::MAX => Err("unexpected QTYPE value")
+            0u16 | 4u16..=u16::MAX => Err("unexpected QTYPE value"),
         })(input)
     }
 }
@@ -290,7 +361,7 @@ impl Class {
             2 => Ok(Self::CS),
             3 => Ok(Self::CH),
             4 => Ok(Self::HS),
-            0u16 | 5u16..=u16::MAX => Err("unexpected CLASS value")
+            0u16 | 5u16..=u16::MAX => Err("unexpected CLASS value"),
         })(input)
     }
 }
@@ -325,11 +396,11 @@ struct DnsQuestion {
 }
 
 #[allow(dead_code)]
-struct DnsAnswer{}
+struct DnsAnswer {}
 
-struct DnsAuthority{}
+struct DnsAuthority {}
 
-struct DnsAdditional{}
+struct DnsAdditional {}
 
 #[derive(PartialEq, Eq, Debug)]
 struct ParsedLabel {
@@ -339,7 +410,7 @@ struct ParsedLabel {
 
 #[allow(dead_code)]
 struct NLabelSequenceElement {
-    data:LabelSequenceElement,
+    data: LabelSequenceElement,
     next: Option<Box<NLabelSequenceElement>>,
 }
 
@@ -374,7 +445,9 @@ impl DnsMessageParser {
         let mut buf = input;
         println!("responding to {} questions", header.qdcount);
         for _ in 0..header.qdcount {
-            let (rest, req_ques) = Self::question_parser(curr_pos, buf).finish().expect("parsing question failed");
+            let (rest, req_ques) = Self::question_parser(curr_pos, buf)
+                .finish()
+                .expect("parsing question failed");
             curr_pos += buf.len() - rest.len();
             buf = rest;
 
@@ -405,30 +478,36 @@ impl DnsMessageParser {
     }
 
     fn question_parser(starting_pos: usize, input: &[u8]) -> IResult<&[u8], DnsQuestion> {
-        tuple((
-            Self::labels_parser,
-            Qtype::parser,
-            Qclass::parser,
-        ))(input).map(move |(i, (qname, qtype, qclass))| (i, DnsQuestion {
-            qname: ParsedLabel {
-                pos: starting_pos,
-                label: qname
+        tuple((Self::labels_parser, Qtype::parser, Qclass::parser))(input).map(
+            move |(i, (qname, qtype, qclass))| {
+                (
+                    i,
+                    DnsQuestion {
+                        qname: ParsedLabel {
+                            pos: starting_pos,
+                            label: qname,
+                        },
+                        qtype,
+                        qclass,
+                    },
+                )
             },
-            qtype,
-            qclass
-        }))
+        )
     }
 
     fn labels_parser(input: &[u8]) -> IResult<&[u8], Vec<LabelSequenceElement>> {
         println!("enter labels_parser");
-        many_till(Self::label_parser, verify(Self::label_parser, |v: &LabelSequenceElement| match v {
-            LabelSequenceElement::Zero | LabelSequenceElement::Pointer(_) => true,
-            LabelSequenceElement::Literal(_) => false,
-        }))(input)
-            .map(|(i, (mut o, o2))| {
-                o.push(o2);
-                (i, o)
-            })
+        many_till(
+            Self::label_parser,
+            verify(Self::label_parser, |v: &LabelSequenceElement| match v {
+                LabelSequenceElement::Zero | LabelSequenceElement::Pointer(_) => true,
+                LabelSequenceElement::Literal(_) => false,
+            }),
+        )(input)
+        .map(|(i, (mut o, o2))| {
+            o.push(o2);
+            (i, o)
+        })
     }
 
     fn label_parser(input: &[u8]) -> IResult<&[u8], LabelSequenceElement> {
@@ -458,7 +537,11 @@ fn serialize_labels(labels: &Vec<LabelSequenceElement>) -> Vec<u8> {
     for element in labels.iter() {
         match element {
             LabelSequenceElement::Literal(p) => {
-                assert!(p.len() < 64, "label.len() is longer ({}) than allowed (63)", p.len());
+                assert!(
+                    p.len() < 64,
+                    "label.len() is longer ({}) than allowed (63)",
+                    p.len()
+                );
                 buf.put_u8(p.len().try_into().expect("label.len() can't fit in u8"));
                 buf.put_slice(p.as_slice());
             }
@@ -528,9 +611,15 @@ fn main() {
                 println!("res_head: {:?}", res_head);
                 response.put_slice(&res_head.serialize());
 
-                let ques_beg = size-rest.len();
+                let ques_beg = size - rest.len();
                 let parser = DnsMessageParser::parse(&req_head, ques_beg, rest);
-                response.put_slice(&parser.ques.iter().flat_map(|q| q.serialize()).collect::<Vec<u8>>());
+                response.put_slice(
+                    &parser
+                        .ques
+                        .iter()
+                        .flat_map(|q| q.serialize())
+                        .collect::<Vec<u8>>(),
+                );
                 response.put_slice(&parser.ans);
                 let sentsz = udp_socket
                     .send_to(&response, source)
