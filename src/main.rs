@@ -204,6 +204,7 @@ impl DnsHeader {
 
 #[derive(Copy, Clone, Debug)]
 #[repr(u16)]
+#[allow(dead_code)]
 enum Type {
     A = 1,
     NS,
@@ -224,6 +225,7 @@ enum Type {
 }
 
 impl Type {
+    #[allow(dead_code)]
     fn parser(input: &[u8]) -> IResult<&[u8], Self> {
         map_res(be_u16, |d: u16| match d {
             1 => Ok(Self::A),
@@ -236,6 +238,7 @@ impl Type {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u16)]
+#[allow(dead_code)]
 enum Qtype {
     A = 1,
     NS,
@@ -271,6 +274,7 @@ impl Qtype {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 enum Class {
     IN = 1,
     CS,
@@ -279,6 +283,7 @@ enum Class {
 }
 
 impl Class {
+    #[allow(dead_code)]
     fn parser(input: &[u8]) -> IResult<&[u8], Self> {
         map_res(be_u16, |d: u16| match d {
             1 => Ok(Self::IN),
@@ -319,6 +324,7 @@ struct DnsQuestion {
     qclass: Qclass,
 }
 
+#[allow(dead_code)]
 struct DnsAnswer{}
 
 struct DnsAuthority{}
@@ -331,6 +337,7 @@ struct ParsedLabel {
     label: Vec<LabelSequenceElement>,
 }
 
+#[allow(dead_code)]
 struct NLabelSequenceElement {
     data:LabelSequenceElement,
     next: Option<Box<NLabelSequenceElement>>,
@@ -343,6 +350,7 @@ enum LabelSequenceElement {
     Zero,
 }
 
+#[allow(dead_code)]
 struct DnsMessageParser {
     ques: Vec<DnsQuestion>,
     ans: Vec<u8>,
