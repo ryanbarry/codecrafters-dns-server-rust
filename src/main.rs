@@ -61,7 +61,7 @@ impl Opcode {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[repr(u16)]
+#[repr(u8)]
 enum Rcode {
     NoError = 0,
     Format,
@@ -86,24 +86,24 @@ impl Rcode {
         alt((
             value(
                 Self::NoError,
-                bits::complete::tag(Self::NoError as u16, 4usize),
+                bits::complete::tag(Self::NoError as u8, 4usize),
             ),
             value(
                 Self::Format,
-                bits::complete::tag(Self::Format as u16, 4usize),
+                bits::complete::tag(Self::Format as u8, 4usize),
             ),
             value(
                 Self::Server,
-                bits::complete::tag(Self::Server as u16, 4usize),
+                bits::complete::tag(Self::Server as u8, 4usize),
             ),
-            value(Self::Name, bits::complete::tag(Self::Name as u16, 4usize)),
+            value(Self::Name, bits::complete::tag(Self::Name as u8, 4usize)),
             value(
                 Self::NotImplemented,
-                bits::complete::tag(Self::Name as u16, 4usize),
+                bits::complete::tag(Self::Name as u8, 4usize),
             ),
             value(
                 Self::Refused,
-                bits::complete::tag(Self::Refused as u16, 4usize),
+                bits::complete::tag(Self::Refused as u8, 4usize),
             ),
             value(Self::Reserved6, bits::complete::tag(Self::Reserved6 as u8, 4usize)),
             value(Self::Reserved7, bits::complete::tag(Self::Reserved7 as u8, 4usize)),
