@@ -502,7 +502,7 @@ fn main() {
                 );
                 let mut response = BytesMut::with_capacity(64);
 
-                let (rest, req_head) = DnsHeader::parser(&buf)
+                let (rest, req_head) = DnsHeader::parser(&buf[..size])
                     .finish()
                     .expect("failed parsing request header");
                 println!("req_head: {:?}", req_head);
