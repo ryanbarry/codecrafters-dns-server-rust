@@ -496,7 +496,7 @@ impl DnsMessageParser {
     }
 
     fn labels_parser(input: &[u8]) -> IResult<&[u8], Vec<LabelSequenceElement>> {
-        println!("enter labels_parser");
+        //println!("enter labels_parser");
         many_till(
             Self::label_parser,
             verify(Self::label_parser, |v: &LabelSequenceElement| match v {
@@ -511,10 +511,10 @@ impl DnsMessageParser {
     }
 
     fn label_parser(input: &[u8]) -> IResult<&[u8], LabelSequenceElement> {
-        println!("\tenter label_parser");
+        //println!("\tenter label_parser");
         u8(input).map(|(input, byte1)| {
             if byte1 & 0xc0 == 0xc0 {
-                println!("\t\tgot pointer");
+                //println!("\t\tgot pointer");
                 let mut offset: u16 = (byte1 ^ 0xc0).into();
                 offset = offset << 8;
                 u8(input).map(|(input, byte2)| {
@@ -522,10 +522,10 @@ impl DnsMessageParser {
                     (input, LabelSequenceElement::Pointer(offset.into()))
                 })
             } else if byte1 != 0u8 {
-                println!("\t\ttaking {} bytes", byte1);
+                //println!("\t\ttaking {} bytes", byte1);
                 take(byte1)(input).map(|(i, o)| (i, LabelSequenceElement::Literal(o.to_vec())))
             } else {
-                println!("\t\tgot zero");
+                //println!("\t\tgot zero");
                 Ok((input, LabelSequenceElement::Zero))
             }
         })?
