@@ -1,4 +1,4 @@
-use std::net::UdpSocket;
+use std::{net::UdpSocket, collections::VecDeque};
 
 use bytes::{BufMut, BytesMut};
 use nom::{
@@ -388,7 +388,7 @@ impl Qclass {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct DnsQuestion {
     qname: ParsedLabel,
     qtype: Qtype,
@@ -402,7 +402,7 @@ struct DnsAuthority {}
 
 struct DnsAdditional {}
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 struct ParsedLabel {
     pos: usize,
     label: Vec<LabelSequenceElement>,
@@ -414,7 +414,7 @@ struct NLabelSequenceElement {
     next: Option<Box<NLabelSequenceElement>>,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 enum LabelSequenceElement {
     Literal(Vec<u8>),
     Pointer(usize),
@@ -445,7 +445,7 @@ impl DnsMessageParser {
         let mut buf = input;
         println!("responding to {} questions", header.qdcount);
         for _ in 0..header.qdcount {
-            let (rest, req_ques) = Self::question_parser(curr_pos, buf)
+            let (rest, req_ques) = Self::question_parser(curr_pos, q_buf.clone(), buf)
                 .finish()
                 .expect("parsing question failed");
             curr_pos += buf.len() - rest.len();
@@ -477,7 +477,11 @@ impl DnsMessageParser {
         new_msg
     }
 
-    fn question_parser(starting_pos: usize, input: &[u8]) -> IResult<&[u8], DnsQuestion> {
+    fn question_parser(
+        starting_pos: usize,
+        mut q_buf: Vec<DnsQuestion>,
+        input: &[u8],
+    ) -> IResult<&[u8], DnsQuestion> {
         tuple((Self::labels_parser, Qtype::parser, Qclass::parser))(input).map(
             move |(i, (qname, qtype, qclass))| {
                 (
@@ -485,7 +489,39 @@ impl DnsMessageParser {
                     DnsQuestion {
                         qname: ParsedLabel {
                             pos: starting_pos,
-                            label: qname,
+                            label: qname
+                                .iter()
+                                .flat_map(|lse| match lse {
+                                    LabelSequenceElement::Literal(_)
+                                    | LabelSequenceElement::Zero => vec![lse.clone()],
+                                    LabelSequenceElement::Pointer(ptr) => {
+                                        q_buf
+                                            .iter_mut()
+                                            .filter_map(|prevq| {
+                                                if prevq.qname.pos <= *ptr {
+                                                    let mut cursor = prevq.qname.pos;
+                                                    let mut s = VecDeque::from(prevq.qname.label.clone());
+                                                    while cursor != (*ptr-1) && s.len() > 0 {
+                                                        match s.pop_front().unwrap() {
+                                                            LabelSequenceElement::Literal(v) => {
+                                                                let element_len = v.len();
+                                                                cursor += element_len;
+                                                            }
+                                                            LabelSequenceElement::Zero => {
+                                                                cursor += 1;
+                                                            },
+                                                            _ => panic!("pointer resolved to pointer"),
+                                                        }
+                                                    }
+                                                    Some(s.into())
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .last().expect("a label")
+                                    }
+                                })
+                                .collect::<Vec<LabelSequenceElement>>()
                         },
                         qtype,
                         qclass,
@@ -545,7 +581,10 @@ fn serialize_labels(labels: &Vec<LabelSequenceElement>) -> Vec<u8> {
                 buf.put_u8(p.len().try_into().expect("label.len() can't fit in u8"));
                 buf.put_slice(p.as_slice());
             }
-            LabelSequenceElement::Pointer(_) => unimplemented!(),
+            LabelSequenceElement::Pointer(p) => {
+                buf.put_u8(0xc0u8);
+                buf.put_u8(*p as u8);
+            }
             LabelSequenceElement::Zero => {
                 buf.put_u8(0u8);
             }
