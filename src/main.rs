@@ -598,8 +598,10 @@ fn main() {
     let mut buf = [0; 512];
 
     let argv: Vec<String> = env::args().collect();
-    let resolver = if argv.len() == 2 && argv[0] == "--resolver" {
-        Some(argv[1].clone())
+    let resolver = if argv.len() == 3 && argv[1] == "--resolver" {
+        let raddr = argv[2].clone();
+        println!("got a resolver arg for {}", raddr);
+        Some(raddr)
     } else {
         None
     };
