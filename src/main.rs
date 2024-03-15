@@ -1,4 +1,4 @@
-use std::{net::UdpSocket, collections::VecDeque};
+use std::{net::UdpSocket, collections::VecDeque, env};
 
 use bytes::{BufMut, BytesMut};
 use nom::{
@@ -424,7 +424,6 @@ enum LabelSequenceElement {
 #[allow(dead_code)]
 struct DnsMessageParser {
     ques: Vec<DnsQuestion>,
-    ans: Vec<u8>,
     auth: Option<DnsAuthority>,
     addl: Option<DnsAdditional>,
 }
@@ -433,13 +432,11 @@ impl DnsMessageParser {
     fn parse(header: &DnsHeader, head_sz: usize, input: &[u8]) -> Self {
         let mut new_msg = DnsMessageParser {
             ques: vec![],
-            ans: vec![],
             auth: None,
             addl: None,
         };
 
         let mut q_buf = vec![];
-        let mut a_buf = vec![];
         let mut curr_pos = head_sz;
 
         let mut buf = input;
@@ -457,23 +454,10 @@ impl DnsMessageParser {
                 qclass: Qclass::IN,
             };
             println!("res_ques: {:?}", res_ques);
-
-            // Answer
-            let mut ans = vec![];
-            ans.put_slice(&serialize_labels(&res_ques.qname.label));
-
-            ans.put_u16(1u16); // TYPE for A record
-            ans.put_u16(1u16); // CLASS for IN
-            ans.put_u32(59u32); // TTL
-            ans.put_u16(4u16); // RDLENGTH
-            ans.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
-
             q_buf.push(res_ques);
-            a_buf.append(&mut ans);
         }
 
         new_msg.ques = q_buf;
-        new_msg.ans = a_buf;
         new_msg
     }
 
@@ -613,6 +597,13 @@ fn main() {
     let udp_socket = UdpSocket::bind("127.0.0.1:2053").expect("Failed to bind to address");
     let mut buf = [0; 512];
 
+    let argv: Vec<String> = env::args().collect();
+    let resolver = if argv.len() == 2 && argv[0] == "--resolver" {
+        Some(argv[1].clone())
+    } else {
+        None
+    };
+
     loop {
         match udp_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
@@ -659,7 +650,27 @@ fn main() {
                         .flat_map(|q| q.serialize())
                         .collect::<Vec<u8>>(),
                 );
-                response.put_slice(&parser.ans);
+                match resolver {
+                    Some(ref _raddr) => {
+                        let _udp_socket = UdpSocket::bind("127.0.0.1:2054").expect("Failed to bind to resolver-listener address");
+                        let mut _ups_buf = [0; 512];
+
+
+                    }
+                    None => {
+                        let mut ans = vec![];
+                        for rq in &parser.ques {
+                            ans.put_slice(&serialize_labels(&rq.qname.label));
+                            ans.put_u16(1u16); // TYPE for A record
+                            ans.put_u16(1u16); // CLASS for IN
+                            ans.put_u32(59u32); // TTL
+                            ans.put_u16(4u16); // RDLENGTH
+                            ans.put_slice(&[8u8, 8u8, 8u8, 8u8]); // RDATA corresponding to 8.8.8.8
+                        }
+
+                        response.put_slice(&ans);
+                    }
+                }
                 let sentsz = udp_socket
                     .send_to(&response, source)
                     .expect("Failed to send response");
