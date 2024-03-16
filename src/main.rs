@@ -295,18 +295,6 @@ enum Type {
     TXT,
 }
 
-impl Type {
-    #[allow(dead_code)]
-    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
-        map_res(be_u16, |d: u16| match d {
-            1 => Ok(Self::A),
-            2 => Ok(Self::NS),
-            3 => Ok(Self::MD),
-            0u16 | 4u16..=u16::MAX => Err("unexpected TYPE value"),
-        })(input)
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 #[repr(u16)]
 #[allow(dead_code)]
@@ -353,19 +341,6 @@ enum Class {
     HS,
 }
 
-impl Class {
-    #[allow(dead_code)]
-    fn parser(input: &[u8]) -> IResult<&[u8], Self> {
-        map_res(be_u16, |d: u16| match d {
-            1 => Ok(Self::IN),
-            2 => Ok(Self::CS),
-            3 => Ok(Self::CH),
-            4 => Ok(Self::HS),
-            0u16 | 5u16..=u16::MAX => Err("unexpected CLASS value"),
-        })(input)
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
 enum Qclass {
     IN = 1,
@@ -395,23 +370,22 @@ struct DnsQuestion {
     qclass: Qclass,
 }
 
-#[allow(dead_code)]
-struct DnsAnswer {}
+impl DnsQuestion {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = BytesMut::with_capacity(512);
+        buf.put_slice(&serialize_labels(&self.qname.label));
 
-struct DnsAuthority {}
+        buf.put_u16(self.qtype as u16);
+        buf.put_u16(self.qclass as u16);
 
-struct DnsAdditional {}
+        buf.to_vec()
+    }
+}
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct ParsedLabel {
     pos: usize,
     label: Vec<LabelSequenceElement>,
-}
-
-#[allow(dead_code)]
-struct NLabelSequenceElement {
-    data: LabelSequenceElement,
-    next: Option<Box<NLabelSequenceElement>>,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -421,26 +395,15 @@ enum LabelSequenceElement {
     Zero,
 }
 
-#[allow(dead_code)]
 struct DnsMessageParser {
-    ques: Vec<DnsQuestion>,
-    auth: Option<DnsAuthority>,
-    addl: Option<DnsAdditional>,
 }
 
 impl DnsMessageParser {
-    fn parse(header: &DnsHeader, head_sz: usize, input: &[u8]) -> Self {
-        let mut new_msg = DnsMessageParser {
-            ques: vec![],
-            auth: None,
-            addl: None,
-        };
-
+    fn parse(header: &DnsHeader, head_sz: usize, input: &[u8]) -> (Vec<DnsQuestion>, usize) {
         let mut q_buf = vec![];
         let mut curr_pos = head_sz;
 
         let mut buf = input;
-        println!("responding to {} questions", header.qdcount);
         for _ in 0..header.qdcount {
             let (rest, req_ques) = Self::question_parser(curr_pos, q_buf.clone(), buf)
                 .finish()
@@ -453,12 +416,9 @@ impl DnsMessageParser {
                 qtype: Qtype::A,
                 qclass: Qclass::IN,
             };
-            println!("res_ques: {:?}", res_ques);
             q_buf.push(res_ques);
         }
-
-        new_msg.ques = q_buf;
-        new_msg
+        (q_buf, curr_pos - head_sz)
     }
 
     fn question_parser(
@@ -578,18 +538,6 @@ fn serialize_labels(labels: &Vec<LabelSequenceElement>) -> Vec<u8> {
     buf.into()
 }
 
-impl DnsQuestion {
-    fn serialize(&self) -> Vec<u8> {
-        let mut buf = BytesMut::with_capacity(512);
-        buf.put_slice(&serialize_labels(&self.qname.label));
-
-        buf.put_u16(self.qtype as u16);
-        buf.put_u16(self.qclass as u16);
-
-        buf.to_vec()
-    }
-}
-
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
@@ -644,24 +592,66 @@ fn main() {
                 response.put_slice(&res_head.serialize());
 
                 let ques_beg = size - rest.len();
-                let parser = DnsMessageParser::parse(&req_head, ques_beg, rest);
+                let questions = DnsMessageParser::parse(&req_head, ques_beg, rest);
+                for q in &questions.0 {
+                    println!("res_ques: {:?}", q);
+                }
                 response.put_slice(
-                    &parser
-                        .ques
+                    &questions.0
                         .iter()
                         .flat_map(|q| q.serialize())
                         .collect::<Vec<u8>>(),
                 );
                 match resolver {
-                    Some(ref _raddr) => {
-                        let _udp_socket = UdpSocket::bind("127.0.0.1:2054").expect("Failed to bind to resolver-listener address");
-                        let mut _ups_buf = [0; 512];
+                    Some(ref raddr) => {
+                        let udp_socket = UdpSocket::bind("127.0.0.1:2054").expect("Failed to bind to resolver-listener address");
+                        let mut ups_buf = [0; 512];
+                        let mut down_res = BytesMut::with_capacity(512);
 
+                        for question in &questions.0 {
+                            let fhead = DnsHeader {
+                                id: 1,
+                                qr: false,
+                                opcode: Opcode::Query,
+                                aa: false,
+                                tc: false,
+                                rd: true,
+                                ra: false,
+                                rcode: Rcode::NoError,
+                                qdcount: 1,
+                                ancount: 0,
+                                nscount: 0,
+                                arcount: 0,
+                            };
+                            let mut freq = BytesMut::with_capacity(64);
+                            freq.put_slice(&fhead.serialize());
+                            freq.put_slice(&question.serialize());
 
+                            let sentsz = udp_socket.send_to(&freq, raddr).expect("failed to forward query");
+                            println!("sent {} bytes to upstream for query", sentsz);
+                            match udp_socket.recv_from(&mut ups_buf) {
+                                Ok((sz, _src)) => {
+                                    println!("got {} bytes from upstream in response", sz);
+                                    let (f_rest, fres_head) = DnsHeader::parser(&ups_buf[..sz])
+                                        .finish()
+                                        .expect("failed parsing forwarder response header");
+                                    println!("fres_head: {:?}", fres_head);
+
+                                    let fres_q_beg = size - rest.len();
+                                    let (_, ans_offs) = DnsMessageParser::parse(&fres_head, fres_q_beg, f_rest);
+                                    down_res.put_slice(&f_rest[ans_offs..]);
+                                }
+                                Err(e) => {
+                                    eprintln!("Error receiving from upstream: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                        response.put_slice(&down_res);
                     }
                     None => {
                         let mut ans = vec![];
-                        for rq in &parser.ques {
+                        for rq in &questions.0 {
                             ans.put_slice(&serialize_labels(&rq.qname.label));
                             ans.put_u16(1u16); // TYPE for A record
                             ans.put_u16(1u16); // CLASS for IN
